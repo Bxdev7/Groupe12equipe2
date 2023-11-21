@@ -1,0 +1,67 @@
+#include <msp430.h> 
+
+#define PIN_IR_SENSOR BIT1 //Broche 1.1 pour le capteur GP2D120
+#define PIN_LED BIT0       // Broche 1.0 pour la LED
+/**
+ * main.c
+ */
+
+unsigned int sensorValue;
+
+void Avancer(){
+    P2OUT &= ~BIT1;
+    TA1CCR1 = 1000; // determine le rapport cyclique du signal
+    P2OUT |= BIT5;
+    TA1CCR2 = 1000; // determine le rapport cyclique du signal
+
+}
+
+void Arreter(){
+    TA1CCR1 = 0; // determine le rapport cyclique du signal
+    TA1CCR2 = 0; // determine le rapport cyclique du signal
+}
+
+void main(void)
+{
+    WDTCTL = WDTPW | WDTHOLD;   // stop watchdog timer
+
+    P2DIR = 0x36; //Regler les P2: XX11 0110  0:INPUT  1:OUTPUT
+
+    P2SEL |= BIT2; // selection fonction TA1.1
+    P2SEL |= BIT4; // selection fonction TA1.1
+
+    TA1CTL = TASSEL_2 | MC_1; // source SMCLK pour TimerA , mode comptage Up
+
+    TA1CCR0 = 2000; // determine la periode du signal
+
+    TA1CCTL1 |= OUTMOD_7; // activation mode de sortie n°7 de TA1.1
+    TA1CCTL2 |= OUTMOD_7; // activation mode de sortie n°7 de TA1.2
+
+    TA1CCR1 = 0; // determine le rapport cyclique du signal
+    TA1CCR2 = 0; // determine le rapport cyclique du signal
+
+    //configuration des broches du capteur comme entrée analogique
+    ADC10CTL1 = INCH_1;
+    ADC10CTL0 = SREF_0 + ADC10SHT_3 + ADC10ON+ADC10IE;
+
+
+    // configuration de la led comme sortie
+    P1DIR |= PIN_LED;
+    P1OUT &= ~PIN_LED;      //Initialiser la led éteinte
+
+    while(1){
+       ADC10CTL0 |= ENC + ADC10SC;    // démarre une convertion
+        while(ADC10CTL1 & ADC10BUSY); // attend la fin de la conversion
+        sensorValue = ADC10MEM; // lit la valeur convertie
+
+        // Allumer la Led  si la valeur du capteur est inférieur à un seuil
+        if(sensorValue < 840 ){
+            P1OUT |= PIN_LED;  // allume la led
+            Arreter();
+        }
+        else {
+            P1OUT &= ~PIN_LED;
+            Avancer();
+        }
+    }
+}
