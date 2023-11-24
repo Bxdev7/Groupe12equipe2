@@ -55,7 +55,7 @@ void main(void)
         sensorValue = ADC10MEM; // lit la valeur convertie
 
         // Allumer la Led  si la valeur du capteur est inférieur à un seuil
-        if(sensorValue < 840 ){
+        if(sensorValue < 837 ){
             P1OUT |= PIN_LED;  // allume la led
             Arreter();
         }
