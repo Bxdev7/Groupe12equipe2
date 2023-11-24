@@ -1,0 +1,107 @@
+#include <msp430.h>
+
+#define PIN_PR_LEFT BIT2 // Broche 1.2 pour la photorésistance de gauche
+#define PIN_PR_RIGHT BIT3 // Broche 1.3 pour la photorésistance de droite
+#define PIN_LED BIT0     // Broche 1.0 pour la LED
+
+unsigned int sensorValueLeft;
+unsigned int sensorValueRight;
+
+void Avancer()
+{
+    P2OUT &= ~BIT1;
+    TA1CCR1 = 1000; // determine le rapport cyclique du signal
+    P2OUT |= BIT5;
+    TA1CCR2 = 1000; // determine le rapport cyclique du signal
+}
+
+void Arreter()
+{
+    TA1CCR1 = 0; // determine le rapport cyclique du signal
+    TA1CCR2 = 0; // determine le rapport cyclique du signal
+}
+
+void tDroite(){
+
+    P2OUT &= BIT1;
+    TA1CCR1 = 1000; // determine le rapport cyclique du signal
+    P2OUT &= BIT5;
+    TA1CCR2 = 1000; // determine le rapport cyclique du signal
+
+}
+
+
+void tGauche(){
+    P2OUT |= BIT1;
+    TA1CCR1 = 1000; // determine le rapport cyclique du signal
+    P2OUT |= BIT5;
+    TA1CCR2 = 1000; // determine le rapport cyclique du signal
+}
+
+
+
+void main(void)
+{
+    WDTCTL = WDTPW | WDTHOLD; // stop watchdog timer
+
+    P2DIR = 0x36; // Regler les P2: XX11 0110 0:INPUT 1:OUTPUT
+
+    P2SEL |= BIT2; // selection fonction TA1.1
+    P2SEL |= BIT4; // selection fonction TA1.1
+
+    TA1CTL = TASSEL_2 | MC_1; // source SMCLK pour TimerA , mode comptage Up
+
+    TA1CCR0 = 2000; // determine la periode du signal
+
+    TA1CCTL1 |= OUTMOD_7; // activation mode de sortie n°7 de TA1.1
+    TA1CCTL2 |= OUTMOD_7; // activation mode de sortie n°7 de TA1.2
+
+    TA1CCR1 = 0; // determine le rapport cyclique du signal
+    TA1CCR2 = 0; // determine le rapport cyclique du signal
+
+    // configuration de la LED comme sortie
+    P1DIR |= PIN_LED;
+    P1OUT &= ~PIN_LED; // Initialiser la led éteinte
+
+
+    while (1)
+    {
+        ADC10CTL0 &= ~ENC; // Désactiver la conversion en cours
+        ADC10CTL0 &= ~ADC10ON; // Désactiver l'AD
+        ADC10CTL1 = INCH_2; // Broche P1.2 pour la photorésistance gauche
+        ADC10CTL0 = SREF_0 + ADC10SHT_3 + ADC10ON + ADC10IE;
+
+        // Lecture de la valeur de la photorésistance gauche
+        ADC10CTL0 |= ENC + ADC10SC; // démarre une conversion
+        while (ADC10CTL1 & ADC10BUSY)
+            ;                    // attend la fin de la conversion
+        sensorValueLeft = ADC10MEM; // lit la valeur convertie pour la photorésistance gauche
+
+        ADC10CTL0 &= ~ENC; // Désactiver la conversion en cours
+        ADC10CTL0 &= ~ADC10ON; // Désactiver l'AD
+
+        ADC10CTL1 |= INCH_3; // Broche P1.3 pour la photorésistance droite
+        ADC10CTL0 = SREF_0 + ADC10SHT_3 + ADC10ON + ADC10IE;
+        // Lecture de la valeur de la photorésistance droite
+        ADC10CTL0 |= ENC + ADC10SC; // démarre une nouvelle conversion
+        while (ADC10CTL1 & ADC10BUSY)
+            ;                    // attend la fin de la conversion
+        sensorValueRight = ADC10MEM; // lit la valeur convertie pour la photorésistance droite
+
+        // Allumer la Led si la valeur du capteur est inférieur à un seuil
+        if (sensorValueLeft < 100)
+        {
+          tGauche();
+
+        }
+        else if (sensorValueRight < 100)
+        {
+            tDroite();
+        }
+        else
+        {
+            P1OUT &= ~PIN_LED;
+            Avancer();
+        }
+    }
+}
