@@ -1,0 +1,203 @@
+#include <msp430.h> 
+
+
+/*Pin du moteur :
+ * P2.0 (INPUT)  = Vitesse moteur gauche (A)
+ * P2.1 (OUTPUT) = Sens de rotation de A
+ * P2.2 (OUTPUT) = PWM de A
+ * P2.3 (INPUT)  = Vitesse moteur droite (B)
+ * P2.4 (OUTPUT) = PWM de B
+ * P2.5 (OUTPUT) = Sens de rotation de B*/
+
+
+/*Pin des capteurs :
+ * P1.7 capteur gauche sol IR
+ * P1.5 capteur droit sol IR
+ * P1.1 capteur détection obstacle IR
+ */
+
+/*
+ * Fonction
+ */
+#define PIN_IR_SENSOR   BIT1 //Broche 1.1 pour le capteur GP2D120
+#define PIN_LED         BIT0 // Broche 1.0 pour la LED
+
+
+unsigned int CapteurGauche;
+unsigned int CapteurDroit;
+unsigned int sensorValue;
+unsigned int stop = 0;
+unsigned int sensorValueLeft;
+unsigned int sensorValueRight;
+
+void tDroite(){
+    P2OUT &= ~BIT1;
+    TA1CCR1 = 1550; // determine le rapport cyclique du signal
+    P2OUT |= BIT5;
+    TA1CCR2 = 300; // determine le rapport cyclique du signal
+
+}
+
+
+void tGauche(){
+    P2OUT &= ~BIT1;
+    TA1CCR1 = 300; // determine le rapport cyclique du signal
+    P2OUT |= BIT5;
+    TA1CCR2 = 1550; // determine le rapport cyclique du signal
+}
+
+void Avancer(){
+
+    P2OUT &= ~BIT1;
+    TA1CCR1 = 1250; // determine le rapport cyclique du signal
+    P2OUT |= BIT5;
+    TA1CCR2 = 1250; // determine le rapport cyclique du signal
+}
+
+void Arreter(){
+    TA1CCR1 = 0; // determine le rapport cyclique du signal
+    TA1CCR2 = 0; // determine le rapport cyclique du signal
+
+}
+
+
+void detectionObstacle(){
+
+    ADC10CTL0 &= ~ENC; // Désactiver la conversion en cours
+    ADC10CTL0 &= ~ADC10ON; // Désactiver l'AD
+
+    ADC10CTL1 = INCH_0 ;
+    ADC10CTL0 = SREF_0+ ADC10SHT_3 + ADC10ON+ADC10IE+REFON ;
+
+    ADC10CTL0 |= ENC + ADC10SC;    // démarre une convertion
+    while(ADC10CTL1 & ADC10BUSY); // attend la fin de la conversion
+    sensorValue = ADC10MEM; // lit la valeur convertie
+
+}
+
+void detectionLumière(){
+
+    ADC10CTL0 &= ~ENC; // Désactiver la conversion en cours
+    ADC10CTL0 &= ~ADC10ON; // Désactiver l'AD
+
+    ADC10CTL1 |= INCH_2; // Broche P1.2 pour la photorésistance gauche
+    ADC10CTL0 = SREF_0+ ADC10SHT_3 + ADC10ON+ADC10IE+REFON ;
+
+    ADC10CTL0 |= ENC + ADC10SC; // démarre une conversion
+    while (ADC10CTL1 & ADC10BUSY);// attend la fin de la conversion
+    sensorValueLeft = ADC10MEM; // lit la valeur convertie pour la photorésistance gauche
+
+    ADC10CTL0 &= ~ENC; // Désactiver la conversion en cours
+    ADC10CTL0 &= ~ADC10ON; // Désactiver l'AD
+
+    ADC10CTL1 |= INCH_4; // Broche P1.3 pour la photorésistance droite
+    ADC10CTL0 = SREF_0+ ADC10SHT_3 + ADC10ON+ADC10IE+REFON ;
+
+    ADC10CTL0 |= ENC + ADC10SC; // démarre une nouvelle conversion
+    while (ADC10CTL1 & ADC10BUSY); // attend la fin de la conversion
+    sensorValueRight = ADC10MEM; // lit la valeur convertie pour la photorésistance droite
+
+}
+
+
+
+void detectionLigne(){ //Capteur Gauche OK mais capteur reste bloqué en tourner droite
+
+    if (P1IN & BIT7){
+        CapteurGauche = 1;
+    }else{
+        CapteurGauche = 0;
+    }
+
+    if(P1IN & BIT6){
+       CapteurDroit = 1;
+    }else {
+       CapteurDroit = 0;
+    }
+
+
+}
+
+
+/**
+ * main.c
+ */
+
+int main(void)
+{
+	WDTCTL = WDTPW | WDTHOLD;	// stop watchdog timer
+	
+	int TravelFlag  = 0;
+
+	P2DIR |= (BIT5 | BIT4 | BIT2 | BIT1); //Regler les P2: XX11 0110  0:INPUT  1:OUTPUT
+	P2DIR &= ~(BIT3 | BIT0);
+
+	P1DIR &= ~(BIT6|BIT7|BIT3); //Regler les P1 en input car connectees aux capteurs
+	P1REN |= BIT3;
+	P1OUT |= BIT3;
+
+	P2SEL |= BIT2; // selection fonction TA1.1
+	P2SEL |= BIT4; // selection fonction TA1.1
+
+	TA1CTL = TASSEL_2 | MC_1; // source SMCLK pour TimerA , mode comptage Up
+	TA1CCR0 = 2000; // determine la periode du signal
+
+	TA1CCTL1 |= OUTMOD_7; // activation mode de sortie n°7 de TA1.1
+	TA1CCTL2 |= OUTMOD_7; // activation mode de sortie n°7 de TA1.2
+
+	//configuration des broches du capteur comme entrée analogique
+	while(TravelFlag == 0){
+	    if ((P1IN & BIT3) == 0){
+	          TravelFlag = 1;
+	      }
+	}
+
+	while(TravelFlag == 1){
+
+	    detectionLumière();
+	    detectionObstacle();
+	    detectionLigne();
+
+        if(sensorValue >= 550 ){
+            Arreter();
+            stop = 1;}else stop = 0;
+        if ((sensorValueRight>100)&&(sensorValueLeft>100)&&(!stop)){
+            if ((CapteurDroit==0)&&(CapteurGauche==1)){
+                tDroite();}
+
+            if ((CapteurDroit==1)&&(CapteurGauche==0)){
+                tGauche();}
+
+            if((CapteurDroit==0)&&(CapteurGauche==0)){
+                while(1){
+                    detectionLigne();
+                    if((CapteurDroit==1)&&(CapteurGauche==1)){
+                        Arreter();
+                    }else{
+                       P2OUT &= ~BIT1;
+                       TA1CCR1 = 750; // determine le rapport cyclique du signal
+                       P2OUT |= BIT5;
+                       TA1CCR2 = 750; // determine le rapport cyclique du signal
+                    }
+                }
+            }
+
+         else if((CapteurDroit==1)&&(CapteurGauche==1)){
+             Avancer();}
+
+        }else  if ((sensorValueLeft < 100)&&(sensorValueRight>100)&&(!stop))
+        {
+          tGauche();
+        }else if ((sensorValueRight < 100)&&(sensorValueLeft>100)&&(!stop))
+        {
+          tDroite();
+        }else if ((sensorValueRight < 100)&&(sensorValueLeft<100)&&(!stop))
+        {
+          Avancer();
+        }
+
+	}
+
+}
+
+
